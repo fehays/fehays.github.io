@@ -1,0 +1,588 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embedded Messaging - Input Blocked Until Agent Joins (Parent Page)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .status-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-waiting {
+            background-color: #ffc107;
+        }
+        
+        .status-connected {
+            background-color: #28a745;
+        }
+        
+        .status-error {
+            background-color: #dc3545;
+        }
+        
+        .event-log {
+            margin-top: 30px;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+        }
+        
+        .event-log h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        
+        .log-entry {
+            padding: 8px 12px;
+            margin: 4px 0;
+            background-color: white;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .log-entry.info {
+            border-left: 3px solid #17a2b8;
+        }
+        
+        .log-entry.success {
+            border-left: 3px solid #28a745;
+        }
+        
+        .log-entry.warning {
+            border-left: 3px solid #ffc107;
+        }
+        
+        .log-entry.error {
+            border-left: 3px solid #dc3545;
+        }
+        
+        .iframe-code {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .iframe-code h3 {
+            margin-top: 0;
+        }
+        
+        .iframe-code pre {
+            background-color: #263238;
+            color: #aed581;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+        
+        .debug-controls {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 6px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Embedded Messaging Test - Input Blocking via PostMessage</h1>
+        
+        <div class="status-panel">
+            <h2>Connection Status</h2>
+            <p id="connectionStatus">
+                <span class="status-indicator status-waiting"></span>
+                <span id="statusText">Waiting for messaging to initialize...</span>
+            </p>
+            <p id="conversationStatus">
+                <span class="status-indicator status-waiting"></span>
+                <span id="conversationStatusText">No conversation started</span>
+            </p>
+            <p id="inputStatus">
+                <span class="status-indicator status-error"></span>
+                <span id="inputStatusText">User input should be BLOCKED</span>
+            </p>
+        </div>
+        
+        <div class="debug-controls">
+            <h3>Debug Controls</h3>
+            <button onclick="clearEventLog()">Clear Event Log</button>
+            <button onclick="sendBlockMessage()">Manually Send Block Message</button>
+            <button onclick="sendEnableMessage()">Manually Send Enable Message</button>
+        </div>
+        
+        <div class="event-log">
+            <h3>Event Log</h3>
+            <div id="eventLogContent"></div>
+        </div>
+        
+        <div class="iframe-code">
+            <h3>Code for Embedded Service Site (iframe)</h3>
+            <p>Add this code to the HEAD section of your embedded service site:</p>
+            <pre id="iframeCode"></pre>
+        </div>
+    </div>
+
+    <!-- Embedded Messaging Script -->
+    <script type='text/javascript'>
+        // Global variables
+        let conversationStarted = false;
+        let messagesSent = 0;
+        let inputEnabled = false;
+        
+        // Logging function
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            const logContent = document.getElementById('eventLogContent');
+            logContent.appendChild(logEntry);
+            logContent.scrollTop = logContent.scrollHeight;
+            
+            console.log(`[Parent] ${message}`);
+        }
+        
+        // Update status displays
+        function updateStatus() {
+            const conversationStatusEl = document.getElementById('conversationStatusText');
+            const inputStatusEl = document.getElementById('inputStatusText');
+            
+            const conversationIndicator = conversationStatusEl.previousElementSibling;
+            const inputIndicator = inputStatusEl.previousElementSibling;
+            
+            if (conversationStarted) {
+                conversationStatusEl.textContent = 'Conversation active';
+                conversationIndicator.className = 'status-indicator status-connected';
+            } else {
+                conversationStatusEl.textContent = 'No conversation started';
+                conversationIndicator.className = 'status-indicator status-waiting';
+            }
+            
+            if (inputEnabled) {
+                inputStatusEl.textContent = 'User input should be ENABLED';
+                inputIndicator.className = 'status-indicator status-connected';
+            } else {
+                inputStatusEl.textContent = 'User input should be BLOCKED';
+                inputIndicator.className = 'status-indicator status-error';
+            }
+        }
+        
+        // Send message to iframe
+        function sendMessageToIframe(action, data = {}) {
+            try {
+                // Find all iframes that might be the embedded service
+                const iframes = document.querySelectorAll('iframe');
+                let messageSent = false;
+                
+                iframes.forEach(iframe => {
+                    // Check if this might be the embedded service iframe
+                    if (iframe.src && iframe.src.includes('ESWSophiaAI')) {
+                        iframe.contentWindow.postMessage({
+                            type: 'EMBEDDED_MESSAGING_INPUT_CONTROL',
+                            action: action,
+                            ...data
+                        }, '*'); // In production, use specific origin instead of '*'
+                        messageSent = true;
+                        log(`Sent ${action} message to iframe: ${iframe.src}`, 'success');
+                    }
+                });
+                
+                if (!messageSent) {
+                    log('No embedded service iframe found yet', 'warning');
+                }
+                
+            } catch (error) {
+                log(`Error sending message to iframe: ${error.message}`, 'error');
+            }
+        }
+        
+        // Manual control functions
+        function sendBlockMessage() {
+            sendMessageToIframe('BLOCK_INPUT');
+            inputEnabled = false;
+            updateStatus();
+        }
+        
+        function sendEnableMessage() {
+            sendMessageToIframe('ENABLE_INPUT');
+            inputEnabled = true;
+            updateStatus();
+        }
+        
+        // Initialize Embedded Messaging
+        function initEmbeddedMessaging() {
+            try {
+                log('Initializing Embedded Messaging...', 'info');
+                
+                embeddedservice_bootstrap.settings.language = 'en_US';
+                embeddedservice_bootstrap.settings.enableUserInputForConversationWithBot = false;
+                embeddedservice_bootstrap.init(
+                    '00D60000000KZAg',
+                    'Sophia_AI',
+                    'https://skinvitality.my.site.com/ESWSophiaAI1736249954377',
+                    {
+                        scrt2URL: 'https://skinvitality.my.salesforce-scrt.com'
+                    }
+                );
+                
+            } catch (err) {
+                log(`Error loading Embedded Messaging: ${err.message}`, 'error');
+                console.error('Error loading Embedded Messaging: ', err);
+            }
+        }
+        
+        // Event Listeners
+        window.addEventListener("onEmbeddedMessagingReady", (event) => {
+            log('Messaging API is ready', 'success');
+            document.getElementById('statusText').textContent = 'Messaging ready';
+            document.getElementById('statusText').previousElementSibling.className = 'status-indicator status-connected';
+        });
+        
+        window.addEventListener("onEmbeddedMessagingConversationStarted", (event) => {
+            log(`Conversation started: ${JSON.stringify(event.detail)}`, 'success');
+            conversationStarted = true;
+            messagesSent = 0;
+            inputEnabled = false;
+            updateStatus();
+            
+            // Send block message to iframe
+            log('Sending BLOCK_INPUT message to iframe', 'warning');
+            setTimeout(() => {
+                sendMessageToIframe('BLOCK_INPUT');
+            }, 500); // Small delay to ensure iframe is ready
+        });
+        
+        window.addEventListener("onEmbeddedMessageSent", (event) => {
+            messagesSent++;
+            log(`Message sent (#${messagesSent}): ${JSON.stringify(event.detail)}`, 'info');
+            
+            // Enable input after first message
+            if (messagesSent === 1 && !inputEnabled) {
+                log('First message detected - enabling input', 'success');
+                inputEnabled = true;
+                updateStatus();
+                sendMessageToIframe('ENABLE_INPUT');
+            }
+        });
+        
+        window.addEventListener("onEmbeddedMessagingConversationClosed", (event) => {
+            log('Conversation closed', 'warning');
+            conversationStarted = false;
+            messagesSent = 0;
+            inputEnabled = false;
+            updateStatus();
+        });
+        
+        // Listen for messages from iframe (optional - for debugging)
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'EMBEDDED_MESSAGING_INPUT_STATUS') {
+                log(`Received status from iframe: ${event.data.status}, Input found: ${event.data.inputFound}`, 'info');
+            } else if (event.data && event.data.type === 'EMBEDDED_MESSAGING_IFRAME_READY') {
+                log('Iframe is ready and input field found', 'success');
+                // If we haven't started a conversation yet, we might want to send a block message preemptively
+                if (!conversationStarted) {
+                    log('Preemptively blocking input', 'info');
+                    sendMessageToIframe('BLOCK_INPUT');
+                }
+            }
+        });
+        
+        // Debug functions
+        function clearEventLog() {
+            document.getElementById('eventLogContent').innerHTML = '';
+            log('Event log cleared', 'info');
+        }
+        
+        // Display the iframe code
+        const iframeCode = `<script>
+(function() {
+    let isBlocked = false;
+    let checkInterval = null;
+    let preventTypingHandler = null;
+    
+    // Function to traverse shadow DOM and find elements
+    function findInShadowDOM(selector, root = document) {
+        // First check in the regular DOM
+        let element = root.querySelector(selector);
+        if (element) return element;
+        
+        // Then check all shadow roots
+        const allElements = root.querySelectorAll('*');
+        for (let el of allElements) {
+            if (el.shadowRoot) {
+                element = findInShadowDOM(selector, el.shadowRoot);
+                if (element) return element;
+            }
+        }
+        return null;
+    }
+    
+    // Function to find the input through shadow DOM
+    function findInputElement() {
+        // Navigate through the shadow DOM structure
+        // Based on your HTML: embeddedmessaging-container -> embeddedmessaging-conversation-state -> embeddedmessaging-input-footer
+        
+        let container = document.querySelector('embeddedmessaging-container');
+        if (!container) return null;
+        
+        // Try direct shadow root access
+        if (container.shadowRoot) {
+            let conversationState = container.shadowRoot.querySelector('embeddedmessaging-conversation-state');
+            if (conversationState && conversationState.shadowRoot) {
+                let inputFooter = conversationState.shadowRoot.querySelector('embeddedmessaging-input-footer');
+                if (inputFooter && inputFooter.shadowRoot) {
+                    return inputFooter.shadowRoot.querySelector('.embeddedMessagingInputFooterTextArea');
+                }
+            }
+        }
+        
+        // If direct access doesn't work, try finding the input footer component
+        let inputFooter = document.querySelector('embeddedmessaging-input-footer');
+        if (inputFooter && inputFooter.shadowRoot) {
+            return inputFooter.shadowRoot.querySelector('.embeddedMessagingInputFooterTextArea');
+        }
+        
+        // Fallback to deep shadow DOM search
+        return findInShadowDOM('.embeddedMessagingInputFooterTextArea');
+    }
+    
+    // Function to find send button through shadow DOM
+    function findSendButton() {
+        let inputFooter = document.querySelector('embeddedmessaging-input-footer');
+        if (inputFooter && inputFooter.shadowRoot) {
+            return inputFooter.shadowRoot.querySelector('button[title="Send"], button[aria-label="Send"]');
+        }
+        return findInShadowDOM('button[title="Send"], button[aria-label="Send"]');
+    }
+    
+    // Function to control input
+    function controlInput(action) {
+        const input = findInputElement();
+        const sendButton = findSendButton();
+        
+        console.log('[Iframe] Control input:', action, 'Input found:', !!input, 'Button found:', !!sendButton);
+        
+        if (action === 'BLOCK_INPUT') {
+            isBlocked = true;
+            if (input) {
+                input.disabled = true;
+                input.setAttribute('aria-disabled', 'true');
+                input.placeholder = 'Waiting for agent to join...';
+                input.style.cursor = 'not-allowed';
+                input.style.backgroundColor = '#f0f0f0';
+                input.style.opacity = '0.6';
+                
+                // Create and store the prevent typing handler
+                preventTypingHandler = function(e) {
+                    if (isBlocked) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        return false;
+                    }
+                };
+                
+                // Add event listeners
+                input.addEventListener('keydown', preventTypingHandler, true);
+                input.addEventListener('keypress', preventTypingHandler, true);
+                input.addEventListener('input', preventTypingHandler, true);
+                input.addEventListener('paste', preventTypingHandler, true);
+                input.addEventListener('beforeinput', preventTypingHandler, true);
+            }
+            if (sendButton) {
+                sendButton.disabled = true;
+                sendButton.style.cursor = 'not-allowed';
+                sendButton.style.opacity = '0.6';
+            }
+            
+            // Send confirmation back to parent
+            parent.postMessage({
+                type: 'EMBEDDED_MESSAGING_INPUT_STATUS',
+                status: 'blocked',
+                inputFound: !!input,
+                buttonFound: !!sendButton
+            }, '*');
+            
+        } else if (action === 'ENABLE_INPUT') {
+            isBlocked = false;
+            if (input) {
+                input.disabled = false;
+                input.setAttribute('aria-disabled', 'false');
+                input.placeholder = 'Type your message...';
+                input.style.cursor = 'text';
+                input.style.backgroundColor = '';
+                input.style.opacity = '1';
+                
+                // Remove event listeners
+                if (preventTypingHandler) {
+                    input.removeEventListener('keydown', preventTypingHandler, true);
+                    input.removeEventListener('keypress', preventTypingHandler, true);
+                    input.removeEventListener('input', preventTypingHandler, true);
+                    input.removeEventListener('paste', preventTypingHandler, true);
+                    input.removeEventListener('beforeinput', preventTypingHandler, true);
+                }
+            }
+            if (sendButton) {
+                sendButton.disabled = false;
+                sendButton.style.cursor = 'pointer';
+                sendButton.style.opacity = '1';
+            }
+            
+            // Send confirmation back to parent
+            parent.postMessage({
+                type: 'EMBEDDED_MESSAGING_INPUT_STATUS',
+                status: 'enabled',
+                inputFound: !!input,
+                buttonFound: !!sendButton
+            }, '*');
+        }
+        
+        return !!input;
+    }
+    
+    // Function to continuously enforce blocking
+    function enforceBlocking() {
+        if (isBlocked) {
+            controlInput('BLOCK_INPUT');
+        }
+    }
+    
+    // Listen for messages from parent window
+    window.addEventListener('message', function(event) {
+        // In production, verify event.origin
+        if (event.data && event.data.type === 'EMBEDDED_MESSAGING_INPUT_CONTROL') {
+            console.log('[Iframe] Received message:', event.data);
+            
+            const success = controlInput(event.data.action);
+            
+            // If we couldn't find the input, try again in a bit
+            if (!success && event.data.action === 'BLOCK_INPUT') {
+                console.log('[Iframe] Input not found, retrying in 500ms');
+                setTimeout(() => controlInput(event.data.action), 500);
+            }
+            
+            // Start or stop enforcement based on action
+            if (event.data.action === 'BLOCK_INPUT') {
+                // Check every 500ms to re-enforce blocking
+                if (checkInterval) clearInterval(checkInterval);
+                checkInterval = setInterval(enforceBlocking, 500);
+            } else if (event.data.action === 'ENABLE_INPUT') {
+                // Stop enforcement
+                if (checkInterval) {
+                    clearInterval(checkInterval);
+                    checkInterval = null;
+                }
+            }
+        }
+    });
+    
+    // Initial check for input field and log when ready
+    let readyInterval = setInterval(function() {
+        const input = findInputElement();
+        if (input) {
+            console.log('[Iframe] Input field found in shadow DOM, ready to receive commands');
+            clearInterval(readyInterval);
+            
+            // Notify parent that iframe is ready
+            parent.postMessage({
+                type: 'EMBEDDED_MESSAGING_IFRAME_READY',
+                inputFound: true
+            }, '*');
+        }
+    }, 100);
+    
+    // Observe shadow host elements for changes
+    function observeShadowHosts() {
+        const observer = new MutationObserver(function(mutations) {
+            if (isBlocked) {
+                controlInput('BLOCK_INPUT');
+            }
+        });
+        
+        // Observe the main container
+        const container = document.querySelector('embeddedmessaging-container');
+        if (container) {
+            observer.observe(container, { childList: true, subtree: true });
+        }
+        
+        // Also observe the input footer if available
+        const inputFooter = document.querySelector('embeddedmessaging-input-footer');
+        if (inputFooter) {
+            observer.observe(inputFooter, { childList: true, subtree: true });
+        }
+    }
+    
+    // Start observing when document is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', observeShadowHosts);
+    } else {
+        observeShadowHosts();
+    }
+})();
+<\/script>`;
+        
+        document.getElementById('iframeCode').textContent = iframeCode;
+        
+    </script>
+    
+    <script type='text/javascript' 
+            src='https://skinvitality.my.site.com/ESWSophiaAI1736249954377/assets/js/bootstrap.min.js' 
+            onload='initEmbeddedMessaging()'>
+    </script>
+</body>
+</html>
