@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDO Embedded Service Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .test-section {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #28a745;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .test-controls {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .log-output {
+            background: #1e1e1e;
+            color: #f8f8f2;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            padding: 15px;
+            border-radius: 5px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 13px;
+            margin: 20px 0;
+        }
+        .service-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .info-card {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        .info-value {
+            font-size: 16px;
+            color: #212529;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>SDO Embedded Service Test</h1>
+        <p>Service Development &amp; Operations Testing Environment</p>
+    </div>
+
+    <div class="test-section">
+        <h2><span class="status-indicator"></span>Service Status</h2>
+        <div class="service-info">
+            <div class="info-card">
+                <div class="info-label">Status</div>
+                <div class="info-value" id="serviceStatus">Initializing...</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Uptime</div>
+                <div class="info-value" id="uptime">00:00:00</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Requests</div>
+                <div class="info-value" id="requestCount">0</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Last Response</div>
+                <div class="info-value" id="lastResponse">--</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <div class="test-controls">
+            <button onclick="initializeService()">Initialize Service</button>
+            <button onclick="testConnection()">Test Connection</button>
+            <button onclick="sendTestData()">Send Test Data</button>
+            <button onclick="clearLogs()">Clear Logs</button>
+            <button onclick="toggleService()" id="toggleBtn">Stop Service</button>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>Service Logs</h2>
+        <div class="log-output" id="logOutput">
+[INFO] SDO Test Environment Ready
+[INFO] Waiting for service initialization...
+        </div>
+    </div>
+
+    <script>
+        let serviceRunning = false;
+        let requestCounter = 0;
+        let startTime = new Date();
+        
+        function log(message, type = 'INFO') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logOutput = document.getElementById('logOutput');
+            const logLine = `[${timestamp}] [${type}] ${message}\n`;
+            logOutput.textContent += logLine;
+            logOutput.scrollTop = logOutput.scrollHeight;
+        }
+        
+        function updateStatus(status) {
+            document.getElementById('serviceStatus').textContent = status;
+        }
+        
+        function updateUptime() {
+            const now = new Date();
+            const diff = now - startTime;
+            const hours = Math.floor(diff / 3600000);
+            const minutes = Math.floor((diff % 3600000) / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+            
+            const uptime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('uptime').textContent = uptime;
+        }
+        
+        function initializeService() {
+            log('Initializing SDO embedded service...');
+            updateStatus('Starting...');
+            
+            setTimeout(() => {
+                serviceRunning = true;
+                updateStatus('Running');
+                log('Service initialized successfully');
+                startTime = new Date();
+            }, 1500);
+        }
+        
+        function testConnection() {
+            if (!serviceRunning) {
+                log('Service not running. Please initialize first.', 'WARN');
+                return;
+            }
+            
+            log('Testing service connection...');
+            requestCounter++;
+            document.getElementById('requestCount').textContent = requestCounter;
+            
+            setTimeout(() => {
+                const responseTime = Math.floor(Math.random() * 100) + 50;
+                log(`Connection test successful (${responseTime}ms)`);
+                document.getElementById('lastResponse').textContent = `${responseTime}ms`;
+            }, 500);
+        }
+        
+        function sendTestData() {
+            if (!serviceRunning) {
+                log('Service not running. Please initialize first.', 'WARN');
+                return;
+            }
+            
+            const testData = {
+                timestamp: new Date().toISOString(),
+                testId: Math.random().toString(36).substr(2, 9),
+                payload: 'test-data-' + Math.floor(Math.random() * 1000)
+            };
+            
+            log(`Sending test data: ${JSON.stringify(testData)}`);
+            requestCounter++;
+            document.getElementById('requestCount').textContent = requestCounter;
+            
+            setTimeout(() => {
+                log('Test data sent successfully');
+                document.getElementById('lastResponse').textContent = 'Data OK';
+            }, 800);
+        }
+        
+        function clearLogs() {
+            document.getElementById('logOutput').textContent = '[INFO] Logs cleared\n';
+            log('Ready for new operations');
+        }
+        
+        function toggleService() {
+            const toggleBtn = document.getElementById('toggleBtn');
+            
+            if (serviceRunning) {
+                log('Stopping service...');
+                serviceRunning = false;
+                updateStatus('Stopped');
+                toggleBtn.textContent = 'Start Service';
+                log('Service stopped');
+            } else {
+                initializeService();
+                toggleBtn.textContent = 'Stop Service';
+            }
+        }
+        
+        // Update uptime every second
+        setInterval(updateUptime, 1000);
+        
+        // Initialize on page load
+        setTimeout(() => {
+            log('SDO Test Environment loaded');
+            log('Click "Initialize Service" to begin testing');
+        }, 100);
+    </script>
+</body>
+</html>
